@@ -585,10 +585,12 @@ function build_mgmt_network {
     if [ $SERVICE_IP_VERSION == '6' ] ; then
         openstack security group rule create --protocol ipv6-icmp --ethertype IPv6 --remote-ip ::/0 lb-health-mgr-sec-grp
         openstack security group rule create --protocol udp --dst-port $OCTAVIA_HM_LISTEN_PORT --ethertype IPv6 --remote-ip ::/0 lb-health-mgr-sec-grp
+        openstack security group rule create --protocol tcp --dst-port $OCTAVIA_HM_LISTEN_PORT --ethertype IPv6 --remote-ip ::/0 lb-health-mgr-sec-grp
         openstack security group rule create --protocol udp --dst-port $OCTAVIA_AMP_LOG_ADMIN_PORT --ethertype IPv6 --remote-ip ::/0 lb-health-mgr-sec-grp
         openstack security group rule create --protocol udp --dst-port $OCTAVIA_AMP_LOG_TENANT_PORT --ethertype IPv6 --remote-ip ::/0 lb-health-mgr-sec-grp
     else
         openstack security group rule create --protocol udp --dst-port $OCTAVIA_HM_LISTEN_PORT lb-health-mgr-sec-grp
+        openstack security group rule create --protocol tcp --dst-port $OCTAVIA_HM_LISTEN_PORT lb-health-mgr-sec-grp
         openstack security group rule create --protocol udp --dst-port $OCTAVIA_AMP_LOG_ADMIN_PORT lb-health-mgr-sec-grp
         openstack security group rule create --protocol udp --dst-port $OCTAVIA_AMP_LOG_TENANT_PORT lb-health-mgr-sec-grp
     fi

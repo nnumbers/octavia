@@ -435,3 +435,11 @@ class AmphoraNetworkConfigException(OctaviaException):
 class ListenerNoChildren(APIException):
     msg = _('Protocol %(protocol)s listeners cannot have child objects.')
     code = 400
+
+
+class HealthMessageBadHeader(OctaviaException):
+    message = _('Received invalid message header for health message')
+
+
+class HealthMessageIncomplete(OctaviaException):
+    message = _('Connection broken before full health message was read')

@@ -13,6 +13,7 @@
 #    under the License.
 
 import socket
+import struct
 import time
 
 from oslo_config import cfg
@@ -20,18 +21,18 @@ from oslo_log import log as logging
 
 from octavia.amphorae.backends.health_daemon import status_message
 from octavia.amphorae.drivers.health import heartbeat_base
+from octavia.common import constants
 from octavia.common import exceptions
 
-UDP_MAX_SIZE = 64 * 1024
-CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
+TCP_LISTEN_BACKLOG = 10
 
 
-class UDPStatusGetter(heartbeat_base.BaseStatusGetter):
+class TCPStatusGetter(heartbeat_base.BaseStatusGetter):
     """This class defines methods that will gather heartbeats
 
-    The heartbeats are transmitted via UDP and this class will bind to a port
-    and absorb them
+    Heartbeats may be transmitted via TCP and this class will bind to a port,
+    accept TCP connections and absorb the messages.
     """
     def __init__(self):
         super().__init__()
@@ -39,50 +40,72 @@ class UDPStatusGetter(heartbeat_base.BaseStatusGetter):
         self.ip = cfg.CONF.health_manager.bind_ip
         self.port = cfg.CONF.health_manager.bind_port
         self.sockaddr = None
-        LOG.info('attempting to listen on %(ip)s port %(port)s',
+        LOG.info('attempting to listen on %(ip)s TCP port %(port)s',
                  {'ip': self.ip, 'port': self.port})
         self.sock = None
         self.update(self.key, self.ip, self.port)
 
     def update(self, key, ip, port):
-        """Update the running config for the udp socket server
+        """Update the running config for the TCP socket server
 
-        :param key: The hmac key used to verify the UDP packets. String
-        :param ip: The ip address the UDP server will read from
-        :param port: The port the UDP server will read from
+        :param key: The hmac key used to verify the TCP messages. String
+        :param ip: The ip address the TCP server will listen on
+        :param port: The port the TCP server will listen on
         :return: None
         """
         self.key = key
-        for addrinfo in socket.getaddrinfo(ip, port, 0, socket.SOCK_DGRAM):
+        for addrinfo in socket.getaddrinfo(ip, port, 0, socket.SOCK_STREAM):
             ai_family = addrinfo[0]
             self.sockaddr = addrinfo[4]
             if self.sock is not None:
                 self.sock.close()
-            self.sock = socket.socket(ai_family, socket.SOCK_DGRAM)
+            self.sock = socket.socket(ai_family, socket.SOCK_STREAM)
             self.sock.settimeout(1)
             self.sock.bind(self.sockaddr)
-            if cfg.CONF.health_manager.sock_rlimit > 0:
-                rlimit = cfg.CONF.health_manager.sock_rlimit
-                LOG.info("setting sock rlimit to %s", rlimit)
-                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF,
-                                     rlimit)
+            self.sock.listen(TCP_LISTEN_BACKLOG)
             break  # just used the first addr getaddrinfo finds
         if self.sock is None:
             raise exceptions.NetworkConfig("unable to find suitable socket")
 
+    def read_n(self, sock, n):
+        data = b""
+        while len(data) < n:
+            chunk = sock.recv(n - len(data))
+            if len(chunk) == 0:
+                raise exceptions.HealthMessageIncomplete()
+            data += chunk
+        return data
+
+    def read_header(self, sock):
+        raw = self.read_n(sock, 8)
+        magic, totallen = struct.unpack(">II", raw)
+        if magic != constants.AMP_HEARTBEAT_HEADER:
+            raise exceptions.HealthMessageBadHeader()
+        if totallen > 0xFFFFFF:
+            # as a safeguard: don't try to read insanely huge messages
+            raise exceptions.HealthMessageBadHeader()
+        if totallen < 9:
+            raise exceptions.HealthMessageBadHeader()
+        return totallen - 8
+
     def dorecv(self, *args, **kw):
-        """Waits for a UDP heart beat to be sent.
+        """Waits for a TCP heart beat to be sent.
 
         :return: Returns the unwrapped payload and addr that sent the
                  heartbeat.
         """
-        (data, srcaddr) = self.sock.recvfrom(UDP_MAX_SIZE)
-        LOG.debug('Received packet from %s', srcaddr)
+        (sock, srcaddr) = self.sock.accept()
+        sock.settimeout(5)
+        LOG.debug('Accepted connection from %s', srcaddr)
+
+        msglen = self.read_header(sock)
+        data = self.read_n(sock, msglen)
+        LOG.debug('Received message from %s', srcaddr)
         try:
             obj = status_message.unwrap_envelope(data, self.key)
         except Exception as e:
             LOG.warning('Health Manager experienced an exception processing a '
-                        'heartbeat message from %s. Ignoring this packet. '
+                        'heartbeat message from %s. Ignoring this message. '
                         'Exception: %s', srcaddr, str(e))
             raise exceptions.InvalidHMACException()
         obj['recv_time'] = time.time()
