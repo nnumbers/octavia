@@ -72,8 +72,10 @@ class BaseStatusSender:
             return
 
         try:
+            LOG.debug("payload: '%s' - size: '%s'", msg, len(msg))
             self._send_msg(dest, msg)
         except OSError:
+            LOG.warning("Was not possible to send payload: '%s' - size: '%s'", msg, len(msg))
             # Pass here as on amp boot it will get one or more
             # error: [Errno 101] Network is unreachable
             # while the networks are coming up
