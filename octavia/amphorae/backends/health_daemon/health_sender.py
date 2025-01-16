@@ -72,7 +72,6 @@ class BaseStatusSender:
             return
 
         try:
-            LOG.debug("payload: '%s' - size: '%s'", msg, len(msg))
             self._send_msg(dest, msg)
         except OSError:
             LOG.warning("Was not possible to send payload: '%s' - size: '%s'", msg, len(msg))
@@ -127,6 +126,8 @@ class StatusSender:
             obj, str(CONF.health_manager.heartbeat_key))
 
         threshold = CONF.health_manager.heartbeat_use_tcp_threshold
+        LOG.debug("payload: '%s' - size: '%s'", envelope_str, len(envelope_str))
+
         # threshold < 0 means: always UDP
         if 0 <= threshold <= len(envelope_str):
             self.tcp_sender.dosend(envelope_str)
