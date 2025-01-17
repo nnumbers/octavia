@@ -73,8 +73,8 @@ class BaseStatusSender:
 
         try:
             self._send_msg(dest, msg)
-        except OSError:
-            LOG.warning("Was not possible to send payload: '%s' - size: '%s'", msg, len(msg))
+        except OSError as e:
+            LOG.warning("Was not possible to send payload: '%s' - size: '%s' - error: '%s'", msg, len(msg), e)
             # Pass here as on amp boot it will get one or more
             # error: [Errno 101] Network is unreachable
             # while the networks are coming up
@@ -111,7 +111,9 @@ class TCPStatusSender(BaseStatusSender):
             # Add header to convey the length of the message
             header = struct.pack(">II", constants.AMP_HEARTBEAT_HEADER,
                                  len(msg) + 8)
+            LOG.debug("Sending TCP message header")
             sock.sendall(header)
+            LOG.debug("Sending TCP message body")
             sock.sendall(msg)
 
 
@@ -130,6 +132,8 @@ class StatusSender:
 
         # threshold < 0 means: always UDP
         if 0 <= threshold <= len(envelope_str):
+            LOG.debug("Sending TCP message")
             self.tcp_sender.dosend(envelope_str)
         else:
+            LOG.debug("Sending UDP message")
             self.udp_sender.dosend(envelope_str)
